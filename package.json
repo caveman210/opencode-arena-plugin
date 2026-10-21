@@ -69,11 +69,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/caveman210/opencode-arena-skill.git"
+    "url": "git+https://github.com/caveman210/opencode-arena-plugin.git"
   },
-  "homepage": "https://github.com/caveman210/opencode-arena-skill#readme",
+  "homepage": "https://github.com/caveman210/opencode-arena-plugin#readme",
   "bugs": {
-    "url": "https://github.com/caveman210/opencode-arena-skill/issues"
+    "url": "https://github.com/caveman210/opencode-arena-plugin/issues"
   },
   "publishConfig": {
     "access": "public"
