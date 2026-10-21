@@ -5,11 +5,14 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  readlinkSync,
+  realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 // The exact zod instance the opencode tool helper uses, so a tool schema and
@@ -61,7 +64,7 @@ let settings: PluginSettings = { maxRoster: MAX_ROSTER, registerAgents: true, ro
 /**
  * Plugin options, from the config entry:
  *
- *   "plugin": [["arena-skill", { "maxRoster": 8, "registerAgents": true }]]
+ *   "plugin": [["opencode-arena-plugin", { "maxRoster": 8, "registerAgents": true }]]
  */
 function pluginSettings(options?: Record<string, unknown>): PluginSettings {
   const raw = (options || {}) as Record<string, any>
@@ -138,6 +141,49 @@ function isSymlink(path: string) {
   }
 }
 
+/** Where a link points, or null when it is not a link. */
+function linkTarget(path: string): string | null {
+  try {
+    return readlinkSync(path)
+  } catch {
+    return null
+  }
+}
+
+/** The real path of a file, so two links to the same file compare equal. */
+function realPath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return resolve(path)
+  }
+}
+
+/** The name this package is published under. */
+function packageName(): string {
+  try {
+    const manifest = JSON.parse(readFileSync(join(skillDir(), "package.json"), "utf8"))
+    if (typeof manifest?.name === "string" && manifest.name.trim()) return manifest.name.trim()
+  } catch {}
+  return "opencode-arena-plugin"
+}
+
+/** The config files opencode reads, in the order it reads them. */
+function configFiles(dir: string): string[] {
+  return ["opencode.json", "opencode.jsonc", "opencode.json5"].map((name) => join(dir, name))
+}
+
+/** True when the opencode config already loads this package from the registry. */
+function configListsPackage(dir: string): boolean {
+  const name = packageName()
+  for (const file of configFiles(dir)) {
+    try {
+      if (readFileSync(file, "utf8").includes(name)) return true
+    } catch {}
+  }
+  return false
+}
+
 /**
  * Put the rest of the package where opencode looks for it.
  *
@@ -149,34 +195,43 @@ function isSymlink(path: string) {
  */
 let installed = false
 
-function ensureInstalled() {
-  if (installed) return
-  installed = true
-  if (process.env.ARENA_NO_LINK) {
-    debug("ARENA_NO_LINK is set, no links were made")
-    return
-  }
-  const dir = configDir()
+/**
+ * Link a path to a target, and repair the link when it went stale.
+ *
+ * A link that points at another copy of this package is repointed at the copy
+ * that is running, so an upgrade does not leave the skill on an old version.
+ * A link that points at something else that is still there is left alone: it
+ * can be a checkout of the user. A link that points nowhere is repaired.
+ */
+function ensureLink(path: string, target: string, kind: "dir" | "file") {
   try {
-    const skill = join(dir, "skills", "arena")
-    if (!existsSync(skill) && !isSymlink(skill)) {
-      mkdirSync(join(dir, "skills"), { recursive: true })
-      symlinkSync(skillDir(), skill, "dir")
-      debug(`linked ${skill} -> ${skillDir()}`)
-    } else if (isSymlink(skill)) {
-      debug(`${skill} is already a link`)
-    } else {
-      debug(`${skill} exists and is not a link, left alone`)
+    if (isSymlink(path)) {
+      const from = linkTarget(path)
+      if (from && resolve(dirname(path), from) === resolve(target)) {
+        debug(`${path} is already linked`)
+        return
+      }
+      if (from && existsSync(from) && !from.includes(packageName())) {
+        debug(`${path} points at ${from}, which is still there, left alone`)
+        return
+      }
+      rmSync(path, { force: true })
+      debug(`${path} pointed at ${from || "nothing"}, repaired it`)
+    } else if (existsSync(path)) {
+      debug(`${path} exists and is not a link, left alone`)
+      return
     }
+    mkdirSync(dirname(path), { recursive: true })
+    symlinkSync(target, path, kind)
+    debug(`linked ${path} -> ${target}`)
+  } catch (err: any) {
+    debug(`could not link ${path}: ${String(err?.message || err)}`)
+  }
+}
 
-    const command = join(dir, "commands", "arena.md")
-    const commandSource = join(skillDir(), "opencode", "commands", "arena.md")
-    if (!existsSync(command) && existsSync(commandSource)) {
-      mkdirSync(join(dir, "commands"), { recursive: true })
-      symlinkSync(commandSource, command)
-      debug(`linked ${command} -> ${commandSource}`)
-    }
-
+/** The live roster: a writable file in the opencode config dir. */
+function ensureRoster() {
+  try {
     const roster = liveRosterPath()
     if (!existsSync(roster) || isSymlink(roster)) {
       const source = defaultRosterPath()
@@ -187,8 +242,61 @@ function ensureInstalled() {
       }
     }
   } catch (err: any) {
-    debug(`self install failed: ${String(err?.message || err)}`)
+    debug(`could not seed the roster: ${String(err?.message || err)}`)
   }
+}
+
+/**
+ * Drop a second copy of this plugin.
+ *
+ * opencode loads a plugin from the config list and from the files in
+ * <config>/plugins. When the package is in the config list and a link to
+ * this same plugin is still in that folder, both load and the tools are
+ * registered twice. The link is moved out of the way, never deleted.
+ */
+function removeDuplicatePlugin(dir: string) {
+  try {
+    const local = join(dir, "plugins", "arena-router.ts")
+    if (!existsSync(local) && !isSymlink(local)) return
+    if (!isSymlink(local)) {
+      debug(`${local} is a real file, left alone`)
+      return
+    }
+    const from = linkTarget(local) || ""
+    const mine = from.includes(packageName()) || realPath(local) === realPath(fileURLToPath(import.meta.url))
+    if (!mine) {
+      debug(`${local} points at something else, left alone`)
+      return
+    }
+    if (!configListsPackage(dir)) {
+      debug(`${local} is the only copy of the plugin, left alone`)
+      return
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+    try {
+      renameSync(local, `${local}.bak-${stamp}`)
+      debug(`moved the duplicate ${local} out of the way`)
+    } catch {
+      rmSync(local, { force: true })
+      debug(`removed the duplicate ${local}`)
+    }
+  } catch (err: any) {
+    debug(`could not clean up a duplicate plugin: ${String(err?.message || err)}`)
+  }
+}
+
+export function ensureInstalled() {
+  if (installed) return
+  installed = true
+  if (process.env.ARENA_NO_LINK) {
+    debug("ARENA_NO_LINK is set, no links were made")
+    return
+  }
+  const dir = configDir()
+  ensureLink(join(dir, "skills", "arena"), skillDir(), "dir")
+  ensureLink(join(dir, "commands", "arena.md"), join(skillDir(), "opencode", "commands", "arena.md"), "file")
+  ensureRoster()
+  removeDuplicatePlugin(dir)
 }
 
 /** The worker prompt, straight from the package. */

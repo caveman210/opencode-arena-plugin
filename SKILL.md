@@ -55,10 +55,11 @@ own thought process, and it appears in the subagent view. Use them by default. T
 tool is only a fallback for a model that has no registered agent; it appears as a tool card, not a
 subagent.
 
-The package is also an opencode plugin. When it is installed that way (`"plugin": ["arena-skill"]` in
-the opencode config), the plugin wires the skill folder, the `/arena` command and the roster into the
-opencode config itself, because opencode installs plugins with install scripts turned off. If the
-tools are missing, `ARENA doctor` says which file is not where it should be.
+The package is also an opencode plugin. When it is installed that way (`"plugin":
+["opencode-arena-plugin"]` in the opencode config), the plugin wires the skill folder, the `/arena`
+command and the roster into the opencode config itself, because opencode installs plugins with
+install scripts turned off. If the tools are missing, `ARENA doctor` says which file is not where it
+should be.
 
 Stay in the agent and mode that invoked this skill. If the user is in build, run as build. If the
 user is in plan, run as plan. Never switch agents, and never elevate permissions on your own.

@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 // Wires the arena package into an opencode install.
 //
-//   node scripts/install.mjs [--config-dir DIR] [--copy] [--dry-run] [--register]
+//   node scripts/install.mjs [--config-dir DIR] [--copy] [--dry-run] [--plugin] [--register]
 //
 // The package is the single source of truth. This script only puts links to
 // it where opencode looks for things, so nothing is ever copied around:
 //
-//   <config>/skills/arena            -> <package>
-//   <config>/plugins/arena-router.ts -> <package>/plugin/arena-router.ts
-//   <config>/commands/arena.md       -> <package>/opencode/commands/arena.md
+//   <config>/skills/arena        -> <package>
+//   <config>/commands/arena.md   -> <package>/opencode/commands/arena.md
+//   <config>/plugins/arena-router.ts -> <package>/plugin/arena-router.ts   (--plugin only)
+//
+// The plugin file is only linked with --plugin. A package that opencode loads
+// from the registry must not also sit in <config>/plugins: both would load
+// and the tools would be registered twice.
 //
 // The roster is the one file that is copied instead of linked:
 // <config>/arena-models.json holds the live model list and has to stay
@@ -45,11 +49,26 @@ const value = (name) => {
 const dryRun = flag("--dry-run")
 const copyInstead = flag("--copy")
 const register = flag("--register")
+const linkPlugin = flag("--plugin")
 const configDir = resolve(
   value("--config-dir") || process.env.OPENCODE_CONFIG_DIR || join(homedir(), ".config", "opencode"),
 )
 
 const log = (line) => console.log(`arena: ${line}`)
+
+/** The name this package is published under. */
+function packageName() {
+  try {
+    const manifest = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8"))
+    if (typeof manifest?.name === "string" && manifest.name.trim()) return manifest.name.trim()
+  } catch {}
+  return "opencode-arena-plugin"
+}
+
+/** True when this copy sits in a node_modules folder: an installed copy. */
+function isInstalledCopy() {
+  return pkg.split(/[\\/]/).includes("node_modules")
+}
 
 function isSymlink(path) {
   try {
@@ -90,6 +109,11 @@ function link(target, path, kind = "file") {
   if (isSymlink(path)) {
     if (pointsAt(path, target)) {
       log(`${path} is already linked`)
+      return
+    }
+    const from = readlinkSync(path)
+    if (from && existsSync(from) && !from.includes(packageName())) {
+      log(`${path} points at ${from}, which is still there, left alone`)
       return
     }
     rmSync(path, { force: true })
@@ -170,36 +194,48 @@ if (process.env.ARENA_SKIP_INSTALL) {
   process.exit(0)
 }
 
-log(`package: ${pkg}`)
-log(`config:  ${configDir}`)
-
-link(pkg, join(configDir, "skills", "arena"), "dir")
-
 const pluginTarget = join(configDir, "plugins", "arena-router.ts")
-if (copyInstead) {
-  mkdirSync(dirname(pluginTarget), { recursive: true })
-  copyFileSync(join(pkg, "plugin", "arena-router.ts"), pluginTarget)
-  log(`copied ${pluginTarget}`)
-} else {
-  link(join(pkg, "plugin", "arena-router.ts"), pluginTarget)
+
+try {
+  log(`package: ${pkg}`)
+  log(`config:  ${configDir}`)
+
+  link(pkg, join(configDir, "skills", "arena"), "dir")
+  link(join(pkg, "opencode", "commands", "arena.md"), join(configDir, "commands", "arena.md"))
+  roster(join(configDir, "arena-models.json"), join(pkg, "arena-models.json"))
+
+  // The plugin file in the config folder is a second way for opencode to load
+  // this plugin. It is only wanted when opencode does not load the package
+  // itself, so it is opt in.
+  if (linkPlugin) {
+    if (copyInstead) {
+      mkdirSync(dirname(pluginTarget), { recursive: true })
+      copyFileSync(join(pkg, "plugin", "arena-router.ts"), pluginTarget)
+      log(`copied ${pluginTarget}`)
+    } else {
+      link(join(pkg, "plugin", "arena-router.ts"), pluginTarget)
+    }
+  } else if (existsSync(pluginTarget) || isSymlink(pluginTarget)) {
+    log(`${pluginTarget} is left alone, drop it to avoid loading the plugin twice`)
+  }
+
+  // The plugin registers the base worker agent from the package, so an agent
+  // file in the config dir is only a leftover from an older install.
+  const staleAgent = join(configDir, "agents", "arena.md")
+  if (existsSync(staleAgent)) {
+    log(`removing ${staleAgent}, the plugin provides that agent now`)
+    backup(staleAgent)
+  }
+
+  if (register) registerPlugin(isInstalledCopy() ? packageName() : `file://${pkg}`)
+
+  log("done. Restart opencode, then run /arena <task>")
+  log("plugin routes:")
+  log(`  the registry: "plugin": ["${packageName()}"]`)
+  log(`  this package: "plugin": ["file://${pkg}"]`)
+  log("next: arena doctor, and arena roster --refresh to rebuild the model roster")
+} catch (err) {
+  // The postinstall hook must never fail an install.
+  log(`could not finish the install: ${err?.message || err}`)
 }
-
-link(join(pkg, "opencode", "commands", "arena.md"), join(configDir, "commands", "arena.md"))
-roster(join(configDir, "arena-models.json"), join(pkg, "arena-models.json"))
-
-// The plugin registers the base worker agent from the package, so an agent
-// file in the config dir is only a leftover from an older install.
-const staleAgent = join(configDir, "agents", "arena.md")
-if (existsSync(staleAgent)) {
-  log(`removing ${staleAgent}, the plugin provides that agent now`)
-  backup(staleAgent)
-}
-
-if (register) registerPlugin(`file://${pkg}`)
-
-log("done. Restart opencode, then run /arena <task>")
-log("plugin routes:")
-log(`  auto loaded:  ${pluginTarget}`)
-log(`  this package: "plugin": ["file://${pkg}"]`)
-log(`  a registry:   "plugin": ["arena-skill"]`)
-log("next: arena doctor, and arena roster --refresh to rebuild the model roster")
+process.exit(0)

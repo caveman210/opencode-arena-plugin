@@ -84,11 +84,17 @@ The package is a plugin as well as a skill. Add it to the `plugin` array in your
 
 ```jsonc
 {
-  "plugin": ["arena-skill"]
+  "plugin": ["opencode-arena-plugin"]
 }
 ```
 
-From a checkout on disk, point the entry at the folder:
+That is the whole install. opencode fetches the package from npm, and the plugin wires itself into
+your config when it loads: it links the skill folder, the `/arena` command and the roster. Nothing
+else has to run, and no install script is needed.
+
+Restart opencode and run `/arena <task>`.
+
+From a checkout on disk, point the entry at the folder instead:
 
 ```jsonc
 {
@@ -96,31 +102,39 @@ From a checkout on disk, point the entry at the folder:
 }
 ```
 
-opencode installs plugins with install scripts turned off, so the plugin wires everything itself
-when it loads: it links the skill folder, the `/arena` command and the roster into your opencode
-config. There is nothing else to run.
+### As a skill and a command
 
-### As a skill
+To get the `arena` command on your `PATH` as well:
+
+```bash
+npm install -g opencode-arena-plugin
+```
+
+That links the skill folder and the command into your opencode config and seeds the roster. The
+router tools only come with the plugin entry above.
 
 From a checkout of this repository:
 
 ```bash
 npm install
+npm run install:local
 ```
 
-That installs the runtime dependency, then links the package into your opencode config:
+That links the package into your opencode config:
 
 ```
 ~/.config/opencode/skills/arena            -> <package>
-~/.config/opencode/plugins/arena-router.ts -> <package>/plugin/arena-router.ts
 ~/.config/opencode/commands/arena.md       -> <package>/opencode/commands/arena.md
 ~/.config/opencode/arena-models.json       -> <package>/arena-models.json (copied, not linked)
 ```
 
-Restart opencode and run `/arena <task>`.
+`npm run install:local` also links the plugin file into `~/.config/opencode/plugins`, so opencode
+loads it from there. Do not do that when the package is in the plugin list as well: opencode would
+load the plugin twice.
 
 The install script takes `--config-dir <dir>`, `--copy` instead of links, `--dry-run` to print what
-it would do, and `--register` to add the plugin entry to your opencode config for you.
+it would do, `--plugin` to link the plugin file, and `--register` to add the plugin entry to your
+opencode config for you.
 
 ### Without an npm account
 
@@ -130,7 +144,7 @@ A tarball, installed from disk:
 
 ```bash
 npm pack
-npm install -g ./arena-skill-1.1.0.tgz
+npm install -g ./opencode-arena-plugin-1.0.0.tgz
 ```
 
 A local checkout, installed as a link:
@@ -144,7 +158,7 @@ A private registry you host yourself:
 ```bash
 npm config set registry https://registry.your-host.tld
 npm publish
-npm install -g arena-skill
+npm install -g opencode-arena-plugin
 ```
 
 The package name is unscoped on purpose, so it fits any registry without a scope.
@@ -152,10 +166,11 @@ The package name is unscoped on purpose, so it fits any registry without a scope
 ### Requirements
 
 - opencode 1.19 or newer
-- Python 3.8 or newer on `PATH`
+- Python 3.8 or newer on `PATH`, as `python3`
 - Node 18 or newer, for the install script and the plugin dependencies
 
-`bracket.py` uses only the standard library.
+`bracket.py` uses only the standard library. On Windows, run opencode in WSL: the package needs a
+`python3` on the `PATH`, and opencode installs npm plugins in the Linux side of it.
 
 ### Check the installation
 
@@ -174,7 +189,7 @@ of the plugin name and its options:
 ```jsonc
 {
   "plugin": [
-    ["arena-skill", { "maxRoster": 12, "registerAgents": true }]
+    ["opencode-arena-plugin", { "maxRoster": 12, "registerAgents": true }]
   ]
 }
 ```
@@ -270,7 +285,7 @@ tests/                the test suite
 ## Development
 
 ```bash
-npm test          # python unittest suite
+npm test          # python unittest suite and the node plugin tests
 npm run doctor    # check this machine
 npm run typecheck # typescript, strict
 npm run prepublishOnly   # what runs before a publish

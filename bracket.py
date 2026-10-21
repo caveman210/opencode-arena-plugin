@@ -79,6 +79,37 @@ def opencode_config_dir():
     return os.path.expanduser("~/.config/opencode")
 
 
+def package_name():
+    """The name this package is published under."""
+    try:
+        with open(os.path.join(HERE, "package.json"), encoding="utf-8") as handle:
+            name = json.load(handle).get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    except (OSError, ValueError):
+        pass
+    return "opencode-arena-plugin"
+
+
+def config_lists_plugin():
+    """True when the opencode config loads this package as a plugin.
+
+    The plugin comes either from the registry, by name, or from a file path.
+    """
+    config = opencode_config_dir()
+    needles = (package_name(), "arena-router.ts")
+    for candidate in ("opencode.json", "opencode.jsonc", "opencode.json5"):
+        path = os.path.join(config, candidate)
+        try:
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+        except OSError:
+            continue
+        if any(needle in text for needle in needles):
+            return True
+    return False
+
+
 # The package ships a roster: one file, next to bracket.py. It is the default,
 # the list of models that worked when the package was built.
 DEFAULT_AGENT_ROSTER = os.path.join(HERE, "arena-models.json")
@@ -3073,10 +3104,13 @@ def cmd_doctor(args):
         else "not found",
     )
     plugin = os.path.join(opencode_config_dir(), "plugins", "arena-router.ts")
+    listed = config_lists_plugin()
     check(
         "router plugin",
-        os.path.isfile(plugin),
-        plugin if os.path.isfile(plugin) else "absent, use native task",
+        os.path.isfile(plugin) or listed,
+        plugin
+        if os.path.isfile(plugin)
+        else ("listed in the opencode config" if listed else "absent, use native task"),
     )
     package = os.path.join(HERE, "package.json")
     plugin_ready = False

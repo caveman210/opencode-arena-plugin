@@ -1,6 +1,6 @@
 {
-  "name": "arena-skill",
-  "version": "1.1.0",
+  "name": "opencode-arena-plugin",
+  "version": "1.0.0",
   "description": "Opencode skill and plugin that runs a bracket tournament: many sub-agents attack, defend and judge each other's solutions until one survives",
   "keywords": [
     "opencode",
@@ -41,33 +41,40 @@
     "scripts/check.mjs",
     "tests/test_bracket.py",
     "tests/test_opencode_port.py",
+    "tests/test_package.py",
+    "tests/plugin_install.test.mjs",
     "tsconfig.json",
     "README.md",
     "LICENSE"
   ],
   "dependencies": {
-    "@opencode-ai/plugin": "1.19.0"
+    "@opencode-ai/plugin": "^1.19.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^5.8.2"
   },
   "scripts": {
-    "postinstall": "node scripts/install.mjs",
+    "postinstall": "node scripts/install.mjs || exit 0",
     "prepublishOnly": "node scripts/check.mjs",
     "doctor": "python3 bracket.py doctor",
     "roster": "python3 bracket.py roster --refresh",
+    "install:local": "node scripts/install.mjs --plugin",
     "typecheck": "tsc --noEmit",
-    "test": "python3 -m unittest discover -s tests -v"
+    "test": "python3 -m unittest discover -s tests -v && node --test \"tests/*.test.mjs\""
   },
   "engines": {
     "node": ">=18",
     "opencode": ">=1.19.0 <2"
   },
-  "os": [
-    "linux",
-    "darwin"
-  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caveman210/opencode-arena-skill.git"
+  },
+  "homepage": "https://github.com/caveman210/opencode-arena-skill#readme",
+  "bugs": {
+    "url": "https://github.com/caveman210/opencode-arena-skill/issues"
+  },
   "publishConfig": {
     "access": "public"
   }
