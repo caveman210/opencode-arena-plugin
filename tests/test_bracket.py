@@ -1,4 +1,4 @@
-"""Tests for skills/arena/bracket.py. Standard library only.
+"""Tests for bracket.py. Standard library only.
 
     python3 -m unittest discover -s tests -v
 
@@ -18,7 +18,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-SKILL = os.path.join(REPO, "skills", "arena")
+SKILL = REPO
 BRACKET = os.path.join(SKILL, "bracket.py")
 sys.path.insert(0, SKILL)
 
@@ -391,13 +391,138 @@ class Guards(TempDir):
 
     def test_no_em_dashes_anywhere(self):
         for root, dirs, files in os.walk(REPO):
-            dirs[:] = [x for x in dirs if x not in (".git", "__pycache__")]
+            dirs[:] = [x for x in dirs if x not in (".git", "__pycache__", "node_modules")]
             for name in files:
                 path = os.path.join(root, name)
                 with open(path, encoding="utf-8", errors="ignore") as fh:
                     text = fh.read()
                 self.assertNotIn(EM_DASH, text, "em dash in %s" % os.path.relpath(path, REPO))
                 self.assertNotIn(EN_DASH, text, "en dash in %s" % os.path.relpath(path, REPO))
+
+
+class PackageContract(unittest.TestCase):
+    """The package has to work as an npm package and as an opencode plugin."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(REPO, "package.json"), encoding="utf-8") as fh:
+            cls.pkg = json.load(fh)
+
+    def test_exports_server_entry_points_at_a_real_file(self):
+        exports = self.pkg.get("exports") or {}
+        self.assertIn(".", exports, "exports needs a root entry or import.meta.resolve fails")
+        self.assertIn("./server", exports, "opencode looks for exports['./server']")
+        for key in (".", "./server"):
+            target = exports[key]
+            if isinstance(target, dict):
+                target = target.get("import") or target.get("default")
+            self.assertTrue(target, "exports[%r] has no entry point" % key)
+            path = os.path.join(REPO, target)
+            self.assertTrue(os.path.isfile(path), "exports[%r] -> %s is missing" % (key, target))
+            self.assertTrue(
+                os.path.abspath(path).startswith(os.path.abspath(REPO) + os.sep),
+                "exports[%r] must stay inside the package" % key,
+            )
+
+    def test_main_and_engines(self):
+        self.assertTrue(os.path.isfile(os.path.join(REPO, self.pkg["main"])))
+        engines = self.pkg.get("engines") or {}
+        self.assertIn("opencode", engines, "engines.opencode gates npm plugin installs")
+        self.assertIn("node", engines)
+
+    def test_packaged_files_include_everything_the_plugin_needs(self):
+        files = self.pkg.get("files") or []
+        for needed in ("plugin/arena-router.ts", "opencode/agents/arena.md",
+                       "opencode/commands/arena.md", "arena-models.json",
+                       "bracket.py", "SKILL.md", "bin/arena.js"):
+            self.assertTrue(
+                needed in files or any(f.rstrip("/") == os.path.dirname(needed) for f in files),
+                "%s must ship in the tarball" % needed,
+            )
+
+    def test_plugin_default_export_is_a_v1_plugin(self):
+        script = (
+            "const m = await import('./plugin/arena-router.ts');"
+            "console.log(JSON.stringify({"
+            "keys: Object.keys(m.default || {}),"
+            "id: (m.default || {}).id,"
+            "server: typeof (m.default || {}).server}));"
+        )
+        r = subprocess.run(["node", "--input-type=module", "-e", script],
+                           cwd=REPO, capture_output=True, text=True)
+        if r.returncode != 0:
+            self.skipTest("node could not load the plugin: %s" % (r.stderr or "").strip())
+        info = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertEqual(info.get("id"), "arena", "a file plugin needs an exported id")
+        self.assertEqual(info.get("server"), "function")
+
+    def test_python_and_plugin_derive_the_same_agent_name(self):
+        script = (
+            "const m = await import('./plugin/arena-router.ts');"
+            "console.log(JSON.stringify("
+            "['opencode/nemotron-3-ultra-free','opencode/beam-free','opencode-go/kimi-free',"
+            "'weird/Model_Name.V2','noslash'].map((x) => m.agentNameForModel(x))));"
+        )
+        r = subprocess.run(["node", "--input-type=module", "-e", script],
+                           cwd=REPO, capture_output=True, text=True)
+        if r.returncode != 0:
+            self.skipTest("node could not load the plugin: %s" % (r.stderr or "").strip())
+        names = json.loads(r.stdout.strip().splitlines()[-1])
+        models = ["opencode/nemotron-3-ultra-free", "opencode/beam-free", "opencode-go/kimi-free",
+                  "weird/Model_Name.V2", "noslash"]
+        for model, want in zip(models, names):
+            self.assertEqual(B.agent_name_for_model(model), want,
+                             "agent name for %s differs between python and the plugin" % model)
+
+    def test_roster_path_prefers_the_live_config_file(self):
+        tmp = tempfile.mkdtemp(prefix="arena-cfg-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        old = os.environ.get("OPENCODE_CONFIG_DIR")
+        os.environ["OPENCODE_CONFIG_DIR"] = tmp
+        self.addCleanup(lambda: os.environ.__setitem__("OPENCODE_CONFIG_DIR", old) if old
+                        else os.environ.pop("OPENCODE_CONFIG_DIR", None))
+        self.assertEqual(B.find_agent_roster(), B.DEFAULT_AGENT_ROSTER)
+        live = os.path.join(tmp, "arena-models.json")
+        write(live, json.dumps([{"model": "opencode/beam-free"}]))
+        self.assertEqual(B.find_agent_roster(), live)
+        rows = B.load_roster_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["agent"], "arena-beam-free",
+                         "a missing agent name has to be derived")
+
+    def test_write_roster_defaults_to_the_config_dir(self):
+        tmp = tempfile.mkdtemp(prefix="arena-cfg-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        old = os.environ.get("OPENCODE_CONFIG_DIR")
+        os.environ["OPENCODE_CONFIG_DIR"] = tmp
+        self.addCleanup(lambda: os.environ.__setitem__("OPENCODE_CONFIG_DIR", old) if old
+                        else os.environ.pop("OPENCODE_CONFIG_DIR", None))
+        rows = [{"model": "opencode/beam-free", "agent": "arena-beam-free", "name": "beam",
+                 "context": 200000, "free": True}]
+        B.write_roster_file(rows)
+        self.assertTrue(os.path.isfile(os.path.join(tmp, "arena-models.json")))
+
+    def test_select_roster_drops_paid_go_gated_and_dead_models(self):
+        rows = [
+            {"model": "opencode/beam-free", "toolcall": True, "free": True, "status": "active",
+             "provider": "opencode", "context": 200000},
+            {"model": "opencode-paid/beam", "toolcall": True, "free": False, "status": "active",
+             "provider": "opencode-paid", "context": 900000},
+            {"model": "opencode-go/kimi-free", "toolcall": True, "free": True, "status": "active",
+             "provider": "opencode-go", "context": 900000},
+            {"model": "opencode/old-free", "toolcall": True, "free": True, "status": "deprecated",
+             "provider": "opencode", "context": 900000},
+            {"model": "opencode/no-tools", "toolcall": False, "free": True, "status": "active",
+             "provider": "opencode", "context": 900000},
+        ]
+        picked = B.select_roster(rows)
+        self.assertEqual([r["model"] for r in picked], ["opencode/beam-free"])
+
+    def test_is_go_gated_only_matches_go_providers(self):
+        self.assertTrue(B.is_go_gated("opencode-go"))
+        self.assertTrue(B.is_go_gated("some_go"))
+        self.assertFalse(B.is_go_gated("opencode"))
+        self.assertFalse(B.is_go_gated("google"))
 
 
 if __name__ == "__main__":

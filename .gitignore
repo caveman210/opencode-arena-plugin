@@ -1,6 +1,9 @@
-.DS_Store
+node_modules/
 __pycache__/
 *.pyc
+.arena/
+scratch/
+*.tgz
+.DS_Store
 .venv/
 *.tmp
-.arena/

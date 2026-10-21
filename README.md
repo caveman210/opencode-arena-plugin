@@ -1,99 +1,43 @@
-# The Arena skill
+# arena for opencode
 
-When Claude keeps giving you bad answers, make 100 versions of it fight to the death. One Claude
-Code skill. Free, MIT, no signup, no API key, nothing to connect.
+Arena makes many solutions to one task compete. Every competitor gets the same brief and a
+different reasoning mode, workflow and strategy card. They attack and revise each other in a
+single-elimination bracket, and a judge scores every match against a written rubric until one
+solution is left.
 
-You use it when you are not happy with what Claude gave you. Instead of asking again and again,
-`/arena` spins up 100 sub-agents and gives every one of them the exact same task, word for word.
-Each one gets a different strategy card: a way of reasoning, a workflow and a strategy, so each one
-attacks the task differently. Then they pair off. Each attacks the other's solution, each defends
-and revises its own, and a judge scores the match on a written rubric. The loser is out. 100
-becomes 50, then 25, 13, 7, 4, 2, 1.
+This is the opencode port of the Claude Code arena skill. The bracket logic and the five prompt
+templates are unchanged.
 
-What comes back is the one solution that survived, the attacks it beat on the way, and how many
-rounds it took.
-
-**It never touches your files.** Every sub-agent writes inside `.arena/`. The winning answer comes
-back to you, and using it is your call.
-
-## Install
-
-Paste this into Claude:
-
-```
-https://github.com/Jakeschincariol/arena-skill
-
-Install this skill, then confirm /arena works.
-```
-
-Or copy the folder yourself, in Claude Code:
-
-```bash
-git clone https://github.com/Jakeschincariol/arena-skill.git
-cp -r arena-skill/skills/arena ~/.claude/skills/
-```
-
-Or as a plugin:
-
-```
-/plugin marketplace add Jakeschincariol/arena-skill
-/plugin install arena-skill@arena-skill
-```
-
-Claude Code namespaces plugin skills, so installed as a plugin it shows up as `/arena-skill:arena`.
-Copy the folder instead if you want plain `/arena`. Project-local instead of global: copy the same
-folder into your repo's `.claude/skills/`.
-
-It needs Claude Code, because it spawns sub-agents with the Agent tool, and Python 3.8 or newer.
-Nothing to pip install.
-
-## Use it
-
-```
-/arena
-/arena --quick write the headline for our pricing page
-/arena --agents 32 fix the flaky test in tests/test_api.py
-/arena --seed 7 plan my launch week, I have 6 hours a day
-```
-
-On its own, `/arena` takes your last request as the task and the answer you did not like as the one
-to beat. Claude can also reach for it without the slash, when you say something like "that's a bad
-answer, make them compete". When it starts itself like that, it asks before it spends anything.
-
-| flag | what it does |
-| --- | --- |
-| `--agents N` | N competitors. Default 100. |
-| `--quick` | 16 competitors. The everyday setting. |
-| `--seed S` | Same seed, same cards and same bracket. Default random, and recorded. |
-| `--wave W` | Sub-agents per wave. Default 10. Only raise it if you raised Claude Code's limit. |
+The whole thing is one package. The skill, the state machine, the router plugin, the model roster
+and the tests live here, and the install script only puts links to them where opencode looks.
 
 ## How it works
 
-1. **Spawn.** N sub-agents, one Agent call each. Every one gets the same task text, byte for byte
+1. **Spawn.** N sub-agents, one task call each. Every one gets the same task text, byte for byte
    (a test checks it), plus one strategy card. There are 15 reasoning modes (first principles,
    inversion, analogy, adversarial, constraint first, worked example, Socratic, contrarian, systems
    thinking and more), 12 workflows (draft, critique, rewrite; outline first; test first; research,
-   then synthesise; three drafts, pick one...) and 12 strategies (simplest thing that works, maximal
-   rigour, user empathy first, edge cases first, speed...). That is 2,160 different cards. The
-   dealer gives each agent its own, with no repeats.
-2. **Attack.** Solutions are paired, and the pairing avoids putting two agents with the same
-   reasoning mode against each other. Each side attacks the other's solution through its own card:
-   what is wrong, what requirement it missed, the exact input that breaks it. Up to 7 attacks,
-   labelled FATAL, MAJOR or MINOR.
+   then synthesise; three drafts, pick one) and 12 strategies (simplest thing that works, maximal
+   rigour, user empathy first, edge cases first, speed). That is 2,160 different cards. The dealer
+   gives each agent its own, with no repeats.
+2. **Attack.** Solutions are paired, and where it can the pairing avoids putting two agents with
+   the same reasoning mode against each other. Each side attacks the other's solution through its
+   own card: what is wrong, what requirement it missed, the exact input that breaks it. Up to 7
+   attacks, labelled FATAL, MAJOR or MINOR.
 3. **Defend.** Each side answers every attack it took, conceding or rebutting with evidence, then
    rewrites its solution to fix everything it conceded.
 4. **Judge.** A separate judge sub-agent reads both revised solutions, checks every attack itself,
-   and scores both on [the rubric](skills/arena/rubric.md): correctness 30, completeness against the
-   task 25, robustness to the attacks raised 20, specificity 15, clarity 10. The judge never sees
-   the cards. `bracket.py` does the arithmetic: the higher total goes through, and a solution with a
-   verified fatal flaw cannot beat one without. The loser is out.
+   and scores both on [the rubric](rubric.md): correctness 30, completeness against the task 25,
+   robustness to the attacks raised 20, specificity 15, clarity 10. The judge never sees the cards.
+   `bracket.py` does the arithmetic: the higher total goes through, and a solution with a verified
+   fatal flaw cannot beat one without. The loser is out.
 5. **Repeat.** The survivors carry their revised solutions into the next round. An odd number means
-   one bye, never to the same agent twice while anyone else is waiting for one.
+   one bye, and the bye goes to the agent that has had the fewest so far.
 6. **Result.** One solution left. You get it, the attacks it survived, its card and the round count.
    If you started from an answer you rejected, a last judge compares the winner with it blind and
    the skill tells you the score, even when the old answer wins.
 
-The 100-agent bracket, from `python3 skills/arena/bracket.py plan`:
+The 100-agent bracket, from `python3 bracket.py plan`:
 
 ```
   round  alive  matches  bye  sub-agent calls  waves
@@ -110,15 +54,15 @@ The 100-agent bracket, from `python3 skills/arena/bracket.py plan`:
   alive per round: 100 -> 50 -> 25 -> 13 -> 7 -> 4 -> 2 -> 1
 ```
 
-The whole tournament lives in one JSON file, managed by `bracket.py`. The main Claude session
-only runs the loop and never reads the hundreds of solution files: every sub-agent writes its work
-to disk and replies with one line, so the main context holds receipts and bookkeeping, not the
-work. If the conversation gets compacted halfway through, `bracket.py next` picks it up from the
-file.
+The whole tournament lives in one JSON file, managed by `bracket.py`. The main session only runs
+the loop and never reads the hundreds of solution files: every sub-agent writes its work to disk
+and replies with one line, so the session holds receipts and bookkeeping, not the work. If the
+conversation gets compacted halfway through, `bracket.py next` picks it up from the file.
 
-## What it costs
+### What it costs
 
-The skill is free. The tokens are yours, and 100 agents is a lot of them.
+The tokens are yours. Every sub-agent call reads the task and one or two solutions, so the bill
+grows with the size of the task.
 
 | agents | rounds | sub-agent calls | waves of 10 |
 | --- | --- | --- | --- |
@@ -128,87 +72,219 @@ The skill is free. The tokens are yours, and 100 agents is a lot of them.
 | 16, `--quick` | 4 | 91 | 16 |
 | 8 | 3 | 43 | 10 |
 
-Add one call when there is a rejected answer to beat. Every call reads the task and one or two
-solutions, so the bill grows with the size of the task. Use `--quick` or `--agents 16` for
-everyday things and save the full 100 for the answer that matters. The skill prints these numbers
-before it starts, and `python3 skills/arena/bracket.py plan --agents N` prints them any time.
+Add one call when there is a rejected answer to beat. `arena estimate` prices the run in tokens and
+money before it spends anything, and the approval gate asks before the first sub-agent starts.
 
-## The tool
+## Install
 
-`bracket.py` is standard-library Python. It is the reason the orchestrator never loses track.
+### As an opencode plugin
+
+The package is a plugin as well as a skill. Add it to the `plugin` array in your opencode config
+(`~/.config/opencode/opencode.json` or `opencode.jsonc`):
+
+```jsonc
+{
+  "plugin": ["arena-skill"]
+}
+```
+
+From a checkout on disk, point the entry at the folder:
+
+```jsonc
+{
+  "plugin": ["file:///home/you/Code/skills/arena"]
+}
+```
+
+opencode installs plugins with install scripts turned off, so the plugin wires everything itself
+when it loads: it links the skill folder, the `/arena` command and the roster into your opencode
+config. There is nothing else to run.
+
+### As a skill
+
+From a checkout of this repository:
 
 ```bash
-python3 bracket.py plan --agents 100        # rounds, calls, waves. Writes nothing
-python3 bracket.py init --agents 100 --seed 7 --task-file task.md [--baseline-file old.md]
-python3 bracket.py next                     # what to do now, with the exact command
-python3 bracket.py prompts attack           # write every sub-agent brief, list the jobs in waves
-python3 bracket.py pairings                 # this round's matches, including the bye
-python3 bracket.py collect                  # record the judges' verdicts
-python3 bracket.py record r3-m07 a042 --reason "..."   # or record one by hand
-python3 bracket.py advance                  # eliminate the losers, pair the survivors
-python3 bracket.py status                   # alive and eliminated, per round
-python3 bracket.py winner                   # the survivor, the attacks it survived, the rounds
+npm install
 ```
 
-The tests run a full 100-agent tournament through that command line with random winners and check
-it ends with exactly one survivor, plus 16, 7 and 1 agents, the dealer's guarantees, and every
-phase from spawn to the final check with stand-in sub-agents:
+That installs the runtime dependency, then links the package into your opencode config:
+
+```
+~/.config/opencode/skills/arena            -> <package>
+~/.config/opencode/plugins/arena-router.ts -> <package>/plugin/arena-router.ts
+~/.config/opencode/commands/arena.md       -> <package>/opencode/commands/arena.md
+~/.config/opencode/arena-models.json       -> <package>/arena-models.json (copied, not linked)
+```
+
+Restart opencode and run `/arena <task>`.
+
+The install script takes `--config-dir <dir>`, `--copy` instead of links, `--dry-run` to print what
+it would do, and `--register` to add the plugin entry to your opencode config for you.
+
+### Without an npm account
+
+Every route below works without an npmjs account.
+
+A tarball, installed from disk:
 
 ```bash
-python3 -m unittest discover -s tests -v
+npm pack
+npm install -g ./arena-skill-1.1.0.tgz
 ```
 
-## The fine print
+A local checkout, installed as a link:
 
-**"100 versions of Claude" means 100 sub-agents of the model you are running.** Not 100 different
-models. What makes them different is the card. The dealer guarantees that no two agents get the
-same card, that every reasoning mode, workflow and strategy is dealt as evenly as possible, and that
-up to 144 agents, no two agents even share two of their three parts.
+```bash
+npm install -g file:/home/you/Code/skills/arena
+```
 
-**A competitor is its card plus its solution file.** Sub-agents do not remember anything between
-calls, so when competitor a017 attacks in round 3, that is a fresh sub-agent handed a017's card and
-a017's latest solution. 100 competitors, 595 calls.
+A private registry you host yourself:
 
-**"The best answer" means the one that survived every match.** The judges are Claude too, scoring
-against a written rubric that is in this repo for you to read and change. What you get is the
-strongest answer this tournament found, not a proof that it is right. That is why it shows you the
-attacks it survived, and why it tells you straight when the answer you rejected scored higher.
+```bash
+npm config set registry https://registry.your-host.tld
+npm publish
+npm install -g arena-skill
+```
 
-**100 agents do not all run at the same moment.** Claude Code runs at most 10 tool calls at once by
-default (the `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` setting), so the arena runs in waves of 10. The
-spawn is 10 waves, the whole 100-agent run is 70, and it takes a while. If you raise that limit,
-pass `--wave` to match.
+The package name is unscoped on purpose, so it fits any registry without a scope.
 
-**Expect permission prompts unless you allow edits.** Every sub-agent writes a file into `.arena/`,
-and in the default permission mode that is one approval per file. Run it in accept-edits mode
-(Shift+Tab).
+### Requirements
 
-**Sub-agents cannot see your chat.** The skill writes a standalone task file, and that file is all
-100 agents ever know. If a requirement never made it into the file, all 100 miss it. It is at
-`.arena/<run>/task.md` if you want to check.
+- opencode 1.19 or newer
+- Python 3.8 or newer on `PATH`
+- Node 18 or newer, for the install script and the plugin dependencies
 
-**It never edits your project.** Code changes come back as a diff or as full files inside the
-winning answer. Applying them is your call, and the skill asks.
+`bracket.py` uses only the standard library.
 
-**The same seed gives the same cards and the same bracket.** Not the same answers. The model is not
-deterministic.
+### Check the installation
 
-**It does not fix a bad task.** Vague task in, 100 flavours of vague out.
+```bash
+arena doctor
+```
 
-## Files
+It checks python, the strategy and rubric files, opencode itself, the plugin, the model roster and
+the links. Everything must read `ok`.
+
+## Plugin options
+
+The plugin takes its options from the opencode config. A plugin entry is either a string or a pair
+of the plugin name and its options:
+
+```jsonc
+{
+  "plugin": [
+    ["arena-skill", { "maxRoster": 12, "registerAgents": true }]
+  ]
+}
+```
+
+| option | default | what it does |
+| --- | --- | --- |
+| `maxRoster` | 16 | how many models get a visible agent, capped at 16 |
+| `registerAgents` | true | set it to false to keep the tools but register no agents |
+| `rosterPath` | the config dir | read and write the roster somewhere else |
+
+Set `ARENA_NO_LINK=1` in the environment when the plugin must not touch your opencode config at
+all. It then only exposes the tools and registers agents from the roster it can already read.
+
+## The model roster
+
+opencode registers one visible subagent per model, so a native task call can be pinned to a model.
+The list of those models is the roster, and the roster is a file.
+
+There are two of them. The live one is `arena-models.json` in your opencode config dir; it is the
+file the plugin reads at startup and rewrites when the model list changes. The packaged one sits
+next to `bracket.py` and is the default a fresh install starts from.
+
+The roster is never guessed. It is read from the live model list:
+
+```bash
+arena roster --refresh
+```
+
+That asks opencode for the models it can reach right now, keeps the free, tool-capable, live ones,
+drops what is deprecated or sits behind a Go plan, and rewrites the live file. Without `--refresh`
+it shows the roster as it is, and flags the models in it that are no longer live. Add `--package` to
+write the packaged default instead, which is what a fresh install of the next version starts from.
+
+The plugin reads the roster when opencode starts and registers one agent per row, so a refresh
+lands in the next session. The agent name is derived from the model id, so
+`opencode/nemotron-3-ultra-free` becomes `arena-nemotron-3-ultra-free`. A model without a row has no
+agent, and a native task call for it fails with "unknown agent type".
+
+## The commands
+
+`arena` forwards to `bracket.py`, which holds the whole state machine.
+
+| command | what it does |
+| --- | --- |
+| `arena doctor` | check the install, the plugin and the roster |
+| `arena roster --refresh` | rebuild the roster from the live models |
+| `arena plan --agents 100` | rounds, sub-agent calls and waves |
+| `arena estimate --agents 100 --task-file task.md` | tokens and cost before spending anything |
+| `arena init --agents 100 --seed 7 --task-file task.md` | deal the cards, pair round 1, write the state |
+| `arena next` | what to do now, and the exact command for it |
+| `arena prompts spawn --json` | write the briefs, list the jobs and their models |
+| `arena collect`, `arena advance` | read the verdicts, close the round, pair the survivors |
+| `arena report --json`, `arena winner` | the per-model record and the survivor |
+| `arena fallback <job> <model>` | record a job that ran on another model |
+| `arena drop <model> <replacement>` | drop a dead model and move all its jobs |
+
+## The approval gate
+
+Arena always estimates before it spends anything. The estimate uses the real task file and the
+chosen models, and reports low, expected and high token counts plus the cost of every model it
+recognizes. A free model costs $0.00. An unknown model gets tokens but no price. Each price row is
+the cost if that model ran the whole tournament; a mixed roster splits jobs across models, so the
+total is the weighted sum of the rows that are used.
+
+Nothing runs until the user says yes. `init --approved` records that answer, so the run does not
+ask twice.
+
+## When a model fails
+
+A model that times out, errors or asks for a Go plan is dropped for the rest of the run, and its
+jobs move to a free model that answers. `arena_task` does this by itself and tells you what it
+moved from and why. With the native task tool you do it by hand: `arena_substitute` for a
+candidate, then `arena fallback <job> <new-model> --reason "..."`, then
+`arena drop <model> <new-model>` for the rest of that model's jobs. The run is marked degraded
+either way, and the report says so.
+
+## Layout
 
 ```
-skills/arena/SKILL.md          the orchestration steps and the exact brief every sub-agent gets
-skills/arena/bracket.py        the tournament state machine, standard library only
-skills/arena/strategies.json   15 reasoning modes, 12 workflows, 12 strategies. Edit freely
-skills/arena/rubric.md         the five criteria every judge scores on
-tests/test_bracket.py          the tests
+SKILL.md              the skill, with the five prompt templates
+bracket.py            the tournament state machine and the command line
+strategies.json       the reasoning modes, workflows and strategies the cards are built from
+rubric.md             how the judges score, and the weights
+arena-models.json     the packaged roster: one row per model with a visible agent
+plugin/               the router plugin, with the arena_models, arena_task and arena_substitute tools
+opencode/agents/      the worker agent the plugin registers
+opencode/commands/    the /arena command
+bin/arena.js          the arena command on your PATH
+scripts/              the install script and the pre-publish check
+tests/                the test suite
 ```
+
+## Development
+
+```bash
+npm test          # python unittest suite
+npm run doctor    # check this machine
+npm run typecheck # typescript, strict
+npm run prepublishOnly   # what runs before a publish
+```
+
+The plugin is TypeScript and loads straight from source. opencode bundles it when it starts, so
+there is no build step.
 
 ## Credit
 
-Made by Jake Schincariol, [opusjake.ai](https://opusjake.ai).
+The arena skill was made by [Jake Schincariol](https://opusjake.ai). This repository is the opencode
+port of it: the bracket logic, the rubric, the strategy cards and the five prompt templates are his
+work, and the npm package, the router plugin and the model roster are the port.
 
 ## License
 
-MIT. Take it, change it, ship it.
+MIT

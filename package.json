@@ -1,0 +1,74 @@
+{
+  "name": "arena-skill",
+  "version": "1.1.0",
+  "description": "Opencode skill and plugin that runs a bracket tournament: many sub-agents attack, defend and judge each other's solutions until one survives",
+  "keywords": [
+    "opencode",
+    "opencode-skill",
+    "opencode-plugin",
+    "skill",
+    "plugin",
+    "agents",
+    "subagents",
+    "tournament",
+    "bracket",
+    "ai",
+    "llm"
+  ],
+  "license": "MIT",
+  "author": "George Sandeep",
+  "type": "module",
+  "main": "./plugin/arena-router.ts",
+  "exports": {
+    ".": "./plugin/arena-router.ts",
+    "./server": "./plugin/arena-router.ts",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "arena": "bin/arena.js"
+  },
+  "files": [
+    "SKILL.md",
+    "arena-models.json",
+    "bracket.py",
+    "rubric.md",
+    "strategies.json",
+    "plugin/arena-router.ts",
+    "opencode/agents/arena.md",
+    "opencode/commands/arena.md",
+    "bin/arena.js",
+    "scripts/install.mjs",
+    "scripts/check.mjs",
+    "tests/test_bracket.py",
+    "tests/test_opencode_port.py",
+    "tsconfig.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@opencode-ai/plugin": "1.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.8.2"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.mjs",
+    "prepublishOnly": "node scripts/check.mjs",
+    "doctor": "python3 bracket.py doctor",
+    "roster": "python3 bracket.py roster --refresh",
+    "typecheck": "tsc --noEmit",
+    "test": "python3 -m unittest discover -s tests -v"
+  },
+  "engines": {
+    "node": ">=18",
+    "opencode": ">=1.19.0 <2"
+  },
+  "os": [
+    "linux",
+    "darwin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

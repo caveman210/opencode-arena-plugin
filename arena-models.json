@@ -1,0 +1,122 @@
+[
+  {
+    "model": "opencode/beam-free",
+    "agent": "arena-beam-free",
+    "name": "Beam Free",
+    "provider": "opencode",
+    "input": 0.0,
+    "output": 0.0,
+    "context": 1048576,
+    "toolcall": true,
+    "status": "active",
+    "free": true
+  },
+  {
+    "model": "opencode/nemotron-3.5-super-vl-free",
+    "agent": "arena-nemotron-3-5-super-vl-free",
+    "name": "Nemotron 3.5 Super VL Free",
+    "provider": "opencode",
+    "input": 0.0,
+    "output": 0.0,
+    "context": 1048576,
+    "toolcall": true,
+    "status": "active",
+    "free": true
+  },
+  {
+    "model": "opencode/longcat-2.5-preview-free",
+    "agent": "arena-longcat-2-5-preview-free",
+    "name": "LongCat 2.5 Preview Free",
+    "provider": "opencode",
+    "input": 0.0,
+    "output": 0.0,
+    "context": 1000000,
+    "toolcall": true,
+    "status": "active",
+    "free": true
+  },
+  {
+    "model": "opencode/minimax-m3.1-flash-free",
+    "agent": "arena-minimax-m3-1-flash-free",
+    "name": "MiniMax M3.1 Flash Free",
+    "provider": "opencode",
+    "input": 0.0,
+    "output": 0.0,
+    "context": 1000000,
+    "toolcall": true,
+    "status": "active",
+    "free": true
+  },
+  {
+    "model": "opencode/nemotron-3-ultra-free",
+    "agent": "arena-nemotron-3-ultra-free",
+    "name": "Nemotron 3 Ultra Free",
+    "provider": "opencode",
+    "input": 0.0,
+    "output": 0.0,
+    "context": 1000000,
+    "toolcall": true,
+    "status": "active",
+    "free": true
+  },
+  {
+    "model": "opencode/nemotron-3.5-lightning-free",
+    "agent": "arena-nemotron-3-5-lightning-free",
+    "name": "Nemotron 3.5 Lightning Free",
+    "provider": "opencode",
+    "input": 0.0,
+    "output": 0.0,
+    "context": 262144,
+    "toolcall": true,
+    "status": "active",
+    "free": true
+  },
+  {
+    "model": "opencode/big-pickle",
+    "agent": "arena-big-pickle",
+    "name": "Big Pickle",
+    "provider": "opencode",
+    "input": 0.0,
+    "output": 0.0,
+    "context": 200000,
+    "toolcall": true,
+    "status": "active",
+    "free": true
+  },
+  {
+    "model": "opencode/deepseek-v4.1-flash-free",
+    "agent": "arena-deepseek-v4-1-flash-free",
+    "name": "DeepSeek V4.1 Flash Free",
+    "provider": "opencode",
+    "input": 0.0,
+    "output": 0.0,
+    "context": 200000,
+    "toolcall": true,
+    "status": "active",
+    "free": true
+  },
+  {
+    "model": "opencode/glm-5.3-flash-free",
+    "agent": "arena-glm-5-3-flash-free",
+    "name": "GLM-5.3-Flash Free",
+    "provider": "opencode",
+    "input": 0.0,
+    "output": 0.0,
+    "context": 200000,
+    "toolcall": true,
+    "status": "active",
+    "free": true
+  },
+  {
+    "model": "opencode/mimo-v2.6-flash-free",
+    "agent": "arena-mimo-v2-6-flash-free",
+    "name": "MiMo-V2.6-Flash Free",
+    "provider": "opencode",
+    "input": 0.0,
+    "output": 0.0,
+    "context": 200000,
+    "toolcall": true,
+    "status": "active",
+    "free": true
+  }
+]
